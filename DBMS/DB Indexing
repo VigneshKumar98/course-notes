@@ -1,0 +1,211 @@
+Database Indexing :
+-> Basically DB indexing are stored in file format, which is named data page.
+-> Each data page is mostly 8kb.
+    => Datapage splitted into,
+      a. header(96 bytes) - which contains page number, free space in the page, checksum.
+      b. Actual data(8060 bytes) - each row stored.
+      c. Offset array (36 bytes) - which contains list of reference pointing to the row in the "Actual Data Segment".
+-> Apart from data page, we also have "Data Block" which can be told as minimum amount of data that can be read/written to hard disk.
+-> Data Block size can vary from 4kb to 16kb.
+-> Each Data Block can store one or more number of data page with respect to their size.
+-> DBMS maintains mapping of "Data Page -> Data Block", because to load data page it needs which data block in the disk that data page is stored.
+-> DB Indexing uses B+ Tree data structure to retrieve the data in O(logN) time.
+-> Before explaining B+ tree, B Tree is nothing but the heigh balanced BST.
+-> The difference B tree and B+ tree is the values of the column to be indexed will only be there in leaf nodes in B+ tree 
+    and intermediatory nodes are used for faster searching, whereas B Tree can have values of the column to be indexed in intermediatory nodes as well.
+-> M-nary B Tree :: In M-nary B tree, we will have (M - 1) keys, each node will have M child nodes.
+    a. (Left to right) when M = 3 :: Let's say first, second and third child node value be 'V1', 'V2' and 'V3' respectively.
+    b. V1 >= -Inf && V1 < Key1.value
+    c. V2 >= Key1.value && V2 < Key2.value
+    d. V3 >= Key2.value && V3 <= Inf
+    Ex : 45,29,34,27,10,55,65 ; M = 3;
+
+                  [45, ]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                  [29, 45]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                  [34, ]
+                 /   |
+          [29, ]  [45, ]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                  [34, ]
+                 /   |
+          [27,29]  [45, ]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                  [27, 34]
+                 /   |    \
+          [10, ]   [29, ]  [45, ]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                  [27, 34]
+                 /   |    \
+          [10, ]   [29, ]  [45, 55]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                        [34, ]
+                      /   |
+                    /     |
+                  /       |
+            [27, ]     [55,   ]
+          /   |        /    |
+        /     |       /     |
+  [10, ]  [29, ]    [45, ]  [65, ]
+          
+-> Above is how the M-nary B tree works, working of M-nary B+ tree is little bit different from this, Let's take same example.
+    In B+ tree, intermediatory node used for faster searching but actual value lies in the leaf and all of those leaf nodes connected, 
+    but as you can see in the above M-nary B tree example, the value to be indexed lies as an intermediatory node as well.
+    Ex : 45,29,34,27,10,55,65 ; M = 3;
+
+INSERT 45:
+                  [45, ]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 29:
+                  [29, 45]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 34:
+                  [34, ]
+                 /   |
+          [29, ]  [34,45]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 27:
+                  [34, ]
+                 /   |
+          [27,29]  [34,45]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 10:
+                  [27, 34]
+                 /   |    \
+          [10, ]   [27,29]  [34,45]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 55:
+                            [34, ]
+                          /   |
+                        /     |                     
+                       /      |
+                      /       |
+                     /        |
+                    /         |
+                   /          |
+              [27,  ]       [45, ]
+                /|         /  |
+              /  |        /   |
+            /    |      /     |
+          /      |    /       |
+        /        |   /         |
+  [10, ]   [27,29]  [34,  ]   [45,55]
+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+INSERT 65:
+                            [34, ]
+                          /   |
+                        /     |                     
+                       /      |
+                      /       |
+                     /        |
+                    /         |
+                   /          |
+              [27,  ]         [45,55]
+                /|             /  |   \
+              /  |            /   |    \ 
+            /    |          /     |     \
+          /      |        /       |      \
+        /        |      /         |        \
+  [10,  ]=> [27,29] =>[34,  ] => [45, ] =>  [55,65]
+
+-> As you can see in the above all the value to be indexed are in the leaf node in the sorted manner.
+-> One intresting thing to note here is during insertion of 55 into the above B+ tree, it will be clear if dry run insertion of 55 into B+ tree.
+    a. first it will have root node, it will check which root's child node 55 belongs, it is 3rd child node of root from left, it will go to that node.
+    b. Now, instead of again checking which child node of current node does 55 belongs, it won't check since current node is a leaf node not intermediatory node.
+    c. Since it is a leaf node, it will try to add 55 into the leaf node, but since leaf node already have 2 keys, it will remove middle key which is 45 and try to move 
+        it to the parent. One important thing to note here is, in B tree 45 would have moved to parent, and child node will not have 45. But here in B+ tree as you can
+        see 45 is moved to parent and 45 is also kept in the leaf node as well, because in B+ tree leaf nodes should contain values that need to be indexed.
+    d. Since parent node is also full, remove the middle element which 34 and move it to parent, since there is no parent to this node, create a new parent node 34. This time
+        you can see, that we are not storing 34 in child node when we are splitting the node into child nodes because we don't need intermediatory node to have index value, 
+        so just moving 34 to the parent will be good.
+
+-> Now we have understood what is B tree and B+ tree. Let's deep dive into how DBMS uses this data structure to faster the reading rows.
+-> Let's take example of table event which eventid, eventname column, and we have to create indexing on eventid.
+    Event Table :
+    EventId   eventname
+    45        E1
+    29        E2
+    34        E3
+    27        E4
+    10        E5
+    55        E6
+    65        E7
+    For this example let's assum datapage can contains 4 data rows.
+
+-> DBMS maintains following details for indexing,
+    -> DataPage to Datablock Map - After knowing where the datapage is located in disk, we need datablock to access it. This map maintains it.
+    -> class B+TreeNode representation for understanding purpose, 
+        class B+TreeNode {
+            static int K = 3;
+            Object[] keys = new Object[K - 1];
+            B+TreeNode[] childNodes = new B+TreeNode[K];
+            Map<Object, DataPage> keyToDatapage;  // While searching in B+ tree, we will find the value in logN time, after finding the node, we need to
+                                                  // know where this datapage exist.
+        }
+
+-> While inserting first row(45, E1) ::
+    a. Let's consider there is no new datapage in DBMS, so DBMS will create datapage1 and it will store this row in  datapage1.
+    b. No node present in B+ tree, new node is created, 45 key is added to that keys list, datapage1 is updated as datapage for key 45 in the node's keyToDataPage map.
+
+    DataPage1:
+    (45,E1)
+
+-> Inserting row(29, E2) ::
+    a. It will traverse the B+ tree, find which leaf node it belongs. And in that leaf node, DBMS decide in which data page to store based on the nearest 
+    key to the current row's index value and will store this row in that datapage. In our case, since there is only one key is present and its datapage is datapage1, we will
+    check whether there is free space in that datapage1, it is there so will store this row in datapage1;
+    b. Node's keyToDataPage map is also updated.
+
+    DataPage1:
+    (45,E1)
+    (29,E2)
+
+-> Inserting row(34, E3) ::
+    a. After searching b+ tree we know which node 34 belongs, same as before we will find datapage to update by finding nearest key to 34, which is 45, so we will store (34,E3) in
+    datapage1.
+    b. Node's keyToDataPage map is also updated.
+
+    DataPage1:
+    (45,E1)
+    (29,E2)
+    (34,E3)
+
+-> Inserting row(27,E4) ::
+    a. Similarly nearest key to 27 after inserting to B+ tree is 29, whose datapage is datapage1.
+    b. Node's keyToDataPage map is also updated.
+
+    DataPage1:
+    (45,E1)
+    (29,E2)
+    (34,E3)
+    (27,E4)
+
+-> Inserting row(10,E5) ::
+    a. Similarly nearest key to 10 after inserting to B+ tree is 27, whose datapage is datapage1. But here datapage is full (max limit 4), so DBMS will split the datapage by
+    adding datapage2, and transferring half of the data from datapage1 to datapage2.
+    b. After splitting rows into 2 different datapage, rows which are moved from datapage1 to datapage2, for those rows in their respective in B+ tree, DBMS will update
+      keyToDataPage map.
+
+    DataPage1:    DataPage2:
+    (45,E1)       (34,E3)
+    (29,E2)       (27,E4)
+    (10,E5)
+
+
+-> There is something called offset array in datapage, whose 0th index starts from right to left. Each datapage's offset is stored in sorted order. When fetching the rows
+    during search based on the index value in B+ tree, if we find the index value, from that index value's node we will get in which datapage the row is stored with the help
+    of the keyToDataPage map in that node. After knowing datapage object we will get the data block from the datapage to datablock map for that datapage and we will access
+    that datapage.
+
+-> Offset is mainly used for clustered indexing, cluster indexing(primary indexing) means in one datapage we can access all the rows through offset so it will be faster, as
+    offset array have sorted pointer pointing to the row irrespective of order in which rows are inserted.
+
+-> B+ tree is used rather than B tree in DBMS because leaf nodes in a B+tree are linked together making range search operations efficient and quick. 
+    -> In B+trees, search keys can be repeated but this is not the case for B-trees
+    -> Deleting data from a B+tree is easier and less time consuming because we only need to remove data from leaf nodes.
+
+
+
+
+    
